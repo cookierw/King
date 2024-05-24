@@ -122,6 +122,8 @@ public:
   USBEXEC(string serial_number);
 
   void write_memory(uint64_t address, vector<uint8_t> data);
+  void write_memory_v64(uint64_t address, vector<uint64_t> data);
+  void write_memory_uint64(uint64_t address, uint64_t value);
   vector<uint8_t> read_memory(uint64_t address, int length);
 
   vector<uint8_t> command(vector<uint8_t> request_data, size_t response_length);

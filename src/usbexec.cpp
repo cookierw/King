@@ -210,6 +210,14 @@ void USBEXEC::write_memory(uint64_t address, vector<uint8_t> data) {
   auto R = this->command(cmd_mcp, 0);
 }
 
+void USBEXEC::write_memory_v64(uint64_t address, vector<uint64_t> data) {
+  auto cmd_mcp = this->cmd_memcpy(address, cmd_data_address(3), data.size());
+  appendV(cmd_mcp, data);
+  printBuffer(cmd_mcp);
+
+  auto R = this->command(cmd_mcp, 0);
+}
+
 uint32_t USBEXEC::read_memory_uint32(uint64_t address) {
   auto value = read_memory(address, 4);
   printBuffer(value);
@@ -229,6 +237,13 @@ uint64_t USBEXEC::read_memory_uint64(uint64_t address) {
 }
 
 void USBEXEC::write_memory_uint32(uint64_t address, uint32_t value) {
+  vector<uint8_t> Mem;
+  append(Mem, value);
+
+  this->write_memory(address, Mem);
+}
+
+void USBEXEC::write_memory_uint64(uint64_t address, uint64_t value) {
   vector<uint8_t> Mem;
   append(Mem, value);
 
